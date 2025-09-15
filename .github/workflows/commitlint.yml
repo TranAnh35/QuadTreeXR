@@ -1,0 +1,22 @@
+name: Lint Commit Messages
+
+on:
+  push:                     # check khi push trực tiếp
+    branches: ["**"]        # hoặc chỉ định branch cụ thể, ví dụ: ["main", "develop"]
+  pull_request:             # check khi mở/sync PR
+    types: [opened, synchronize, reopened]
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: wagoid/commitlint-github-action@v5
+        with:
+          configFile: commitlint.config.js
+      - name: Show commit guidelines
+        if: failure()
+        run: |
+          echo "❌ Commit message không đúng chuẩn!"
+          echo "👉 Cấu trúc đúng: <type>(optional scope): <description>"
+          echo "Ví dụ: feat(auth): thêm login bằng Google"
