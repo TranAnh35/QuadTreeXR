@@ -8,10 +8,10 @@
 
 ### 1.2 Preprocessing Pipeline
 - [X] Support for 8-bit and 16-bit grayscale images
-- [ ] Implement dynamic range mapping (for 16-bit → 8-bit conversion if needed)
-- [ ] Add padding/cropping to power-of-two dimensions
-- [ ] Implement optional denoising (Gaussian, bilateral)
-- [ ] Create data split (train/val/test)
+- [X] Implement dynamic range mapping (for 16-bit → 8-bit conversion if needed)
+- [X] Add padding/cropping to power-of-two dimensions
+- [X] Implement optional denoising (Gaussian, bilateral)
+- [X] Create data split (train/val/test)
 
 ## 2. Core Algorithm (Week 3-4)
 
