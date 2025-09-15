@@ -16,14 +16,14 @@
 ## 2. Core Algorithm (Week 3-4)
 
 ### 2.1 Quadtree Implementation
-- [ ] Design QuadNode and Quadtree data structures
-- [ ] Implement basic recursive quadtree decomposition
-- [ ] Add variance-based splitting criterion
-- [ ] Implement minimum block size constraint
-- [ ] Add mean value approximation for leaf nodes
-- [ ] Optimize with integral images for O(1) block statistics
-- [ ] Add visualization for quadtree decomposition
-- [ ] Implement serialization/deserialization for quadtree
+- [X] Design QuadNode and Quadtree data structures
+- [X] Implement basic recursive quadtree decomposition
+- [X] Add variance-based splitting criterion
+- [X] Implement minimum block size constraint
+- [X] Add mean value approximation for leaf nodes
+- [X] Optimize with integral images for O(1) block statistics
+- [X] Add visualization for quadtree decomposition
+- [X] Implement serialization/deserialization for quadtree
 
 ### 2.2 Optimization
 - [ ] Integral images for O(1) block statistics
