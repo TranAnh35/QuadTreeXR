@@ -4,7 +4,7 @@
 
 ### 1.1 Dataset Selection
 - [X] Download MIMIC-CXR dataset
-- [ ] Create data loading utilities for different formats (DICOM, PNG, JPG)
+- [X] Create data loading utilities for different formats (DICOM, PNG, JPG)
 
 ### 1.2 Preprocessing Pipeline
 - [ ] Convert DICOM to grayscale (16-bit)
