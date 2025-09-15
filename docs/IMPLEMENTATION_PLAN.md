@@ -3,7 +3,7 @@
 ## 1. Dataset Preparation (Week 1-2)
 
 ### 1.1 Dataset Selection
-- [ ] Download MIMIC-CXR dataset
+- [X] Download MIMIC-CXR dataset
 - [ ] Create data loading utilities for different formats (DICOM, PNG, JPG)
 
 ### 1.2 Preprocessing Pipeline
