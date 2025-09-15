@@ -3,12 +3,12 @@
 ## 1. Dataset Preparation (Week 1-2)
 
 ### 1.1 Dataset Selection
-- [X] Download MIMIC-CXR dataset
-- [X] Create data loading utilities for different formats (DICOM, PNG, JPG)
+- [X] Download MIMIC-CXR dataset (PNG/JPG versions)
+- [X] Create data loading utilities for PNG and JPG formats
 
 ### 1.2 Preprocessing Pipeline
-- [ ] Convert DICOM to grayscale (16-bit)
-- [ ] Implement dynamic range mapping (16-bit → 8/12-bit)
+- [X] Support for 8-bit and 16-bit grayscale images
+- [ ] Implement dynamic range mapping (for 16-bit → 8-bit conversion if needed)
 - [ ] Add padding/cropping to power-of-two dimensions
 - [ ] Implement optional denoising (Gaussian, bilateral)
 - [ ] Create data split (train/val/test)
@@ -99,9 +99,8 @@ class QuadTreeNode:
 ## Dependencies
 - Python 3.9+
 - NumPy
-- OpenCV
+- OpenCV (optional, for advanced image processing)
 - Pillow
-- PyDICOM
 - scikit-image
 - Matplotlib (for visualization)
 - tqdm (for progress bars)

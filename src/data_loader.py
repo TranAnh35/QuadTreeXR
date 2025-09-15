@@ -22,50 +22,6 @@ try:
 except ImportError:
     HAS_OPENCV = False
 
-# Try to import pydicom, but make it optional
-try:
-    import pydicom
-    from pydicom.pixel_data_handlers.util import apply_voi_lut
-    HAS_PYDICOM = True
-except ImportError:
-    HAS_PYDICOM = False
-    
-
-def load_dicom_image(dicom_path: Union[str, Path], voi_lut: bool = True) -> np.ndarray:
-    """Load and process a DICOM image file.
-    
-    Args:
-        dicom_path: Path to the DICOM file
-        voi_lut: Whether to apply VOI LUT (Value of Interest Lookup Table)
-        
-    Returns:
-        Numpy array containing the image data in 16-bit grayscale
-    """
-    if not HAS_PYDICOM:
-        raise ImportError("pydicom is required for DICOM support. Please install it with: pip install pydicom")
-    
-    # Read the DICOM file
-    dicom = pydicom.dcmread(str(dicom_path))
-    
-    # Apply VOI LUT if available and requested
-    if voi_lut and hasattr(dicom, 'WindowCenter') and hasattr(dicom, 'WindowWidth'):
-        img = apply_voi_lut(dicom.pixel_array, dicom)
-    else:
-        img = dicom.pixel_array
-    
-    # Handle different photometric interpretations
-    if hasattr(dicom, 'PhotometricInterpretation'):
-        if dicom.PhotometricInterpretation == "MONOCHROME1":
-            # Invert the image if needed (black on white to white on black)
-            img = np.max(img) - img
-    
-    # Convert to 16-bit if needed
-    if img.dtype != np.uint16:
-        img = img.astype(np.float32)
-        img = (img - img.min()) / (img.max() - img.min()) * 65535.0
-        img = img.astype(np.uint16)
-    
-    return img
 
 
 class XRayDataset:
@@ -275,34 +231,15 @@ class XRayDataset:
         return result.astype(np.uint16 if output_bits > 8 else np.uint8)
     
     def _load_image(self, image_path: Union[str, Path]) -> Image.Image:
-        """Load an image from file, supporting multiple formats including DICOM."""
+        """Load an image from file, supporting PNG and JPG formats."""
         image_path = Path(image_path)
         
         try:
-            # Handle DICOM files
-            if image_path.suffix.lower() in ['.dcm', '.dicom']:
-                if not HAS_PYDICOM:
-                    raise ImportError(
-                        "pydicom is required for DICOM support. "
-                        "Please install it with: pip install pydicom"
-                    )
+            # Check file extension
+            if image_path.suffix.lower() not in ['.png', '.jpg', '.jpeg']:
+                raise ValueError(f"Unsupported image format: {image_path.suffix}. Only PNG and JPG are supported.")
                 
-                # Load DICOM as 16-bit
-                img_array = load_dicom_image(image_path)
-                
-                # Apply dynamic range mapping if needed
-                if self.bit_depth < 16:
-                    img_array = self.map_dynamic_range(
-                        img_array, 
-                        input_bits=16, 
-                        output_bits=self.bit_depth,
-                        min_percentile=0.5,
-                        max_percentile=99.5
-                    )
-                
-                return Image.fromarray(img_array).convert('L')
-                
-            # Handle regular image files
+            # Open image file
             img = Image.open(image_path)
             
             # Convert to grayscale if not already
