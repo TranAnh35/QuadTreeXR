@@ -26,10 +26,10 @@
 - [X] Implement serialization/deserialization for quadtree
 
 ### 2.2 Optimization
-- [ ] Integral images for O(1) block statistics
-- [ ] Bitstream encoding/decoding
-- [ ] Quantization of node values
-- [ ] Entropy coding (Huffman/Arithmetic)
+- [X] Integral images for O(1) block statistics
+- [X] Bitstream encoding/decoding
+- [X] Quantization of node values
+- [X] Entropy coding (Huffman/Arithmetic)
 
 ## 3. Baseline Implementation (Week 4)
 - [ ] JPEG compression wrapper
