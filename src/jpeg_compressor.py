@@ -134,42 +134,43 @@ class CompressionBenchmark:
     """Lớp tiện ích để so sánh hiệu suất giữa JPEG và Quadtree"""
     
     @staticmethod
-    def compare_compression(image: np.ndarray, quality: int = 95) -> dict:
+    def compare_compression(image: np.ndarray,
+                           compressor_func,
+                           decompressor_func,
+                           quality: int = 95) -> dict:
         """
         So sánh nén JPEG và Quadtree
-        
+
         Args:
             image: Ảnh đầu vào
+            compressor_func: Hàm nén QuadTree (nhận image, trả về bytes)
+            decompressor_func: Hàm giải nén QuadTree (nhận bytes, trả về image)
             quality: Chất lượng nén JPEG (0-100)
-            
+
         Returns:
             Dictionary chứa kết quả so sánh
         """
-        from .quadtree import QuadTree  # Import tại đây để tránh import vòng
-        
         # Nén bằng JPEG
         jpeg = JPEGCompressor(quality=quality)
         jpeg_data = jpeg.compress(image)
         jpeg_ratio = jpeg.get_compression_ratio(
-            image.nbytes, 
+            image.nbytes,
             len(jpeg_data)
         )
-        
+
         # Giải nén và tính PSNR
         jpeg_decompressed = jpeg.decompress(jpeg_data)
         jpeg_psnr = jpeg.calculate_psnr(image, jpeg_decompressed)
-        
+
         # Nén bằng Quadtree
-        # Giả sử đã có phương thức compress() trong QuadTree
-        quadtree = QuadTree(image)
-        quadtree_data = quadtree.compress()
+        quadtree_data = compressor_func(image)
         quadtree_ratio = jpeg.get_compression_ratio(
             image.nbytes,
             len(quadtree_data)
         )
-        quadtree_decompressed = quadtree.decompress()
+        quadtree_decompressed = decompressor_func(quadtree_data)
         quadtree_psnr = jpeg.calculate_psnr(image, quadtree_decompressed)
-        
+
         return {
             'jpeg': {
                 'size': len(jpeg_data),

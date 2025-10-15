@@ -149,18 +149,34 @@ class QuadTree:
         self.integral_sq = np.pad(self.integral_sq, ((1, 0), (1, 0)), 'constant')
     
     def _block_stats(self, x: int, y: int, size: int) -> Tuple[float, float]:
-        """Compute mean and variance of a block using direct computation."""
-        # Extract the block from the image
-        block = self.image[y:y+size, x:x+size]
-        
-        # Calculate mean and variance directly from the block
-        mean = np.mean(block)
-        variance = np.var(block) if block.size > 1 else 0.0
-        
+        """Compute mean and variance of a block using integral images for O(1) computation."""
+        # Calculate region boundaries
+        y1, x1 = y, x  # Top-left corner (0-indexed in image coordinates)
+        y2, x2 = y + size, x + size  # Bottom-right corner (exclusive)
+
+        # Use integral images for O(1) sum and sum-of-squares calculation
+        # Note: integral images are padded with zeros at (0,0)
+        sum_val = (self.integral[y2, x2] + self.integral[y1, x1] -
+                   self.integral[y1, x2] - self.integral[y2, x1])
+
+        sum_sq = (self.integral_sq[y2, x2] + self.integral_sq[y1, x1] -
+                  self.integral_sq[y1, x2] - self.integral_sq[y2, x1])
+
+        # Calculate mean
+        pixel_count = size * size
+        mean = sum_val / pixel_count
+
+        # Calculate variance using the formula: Var(X) = E[X²] - E[X]²
+        if pixel_count > 1:
+            mean_sq = sum_sq / pixel_count
+            variance = mean_sq - mean * mean
+        else:
+            variance = 0.0
+
         # Apply quantization if enabled
         if self.use_quantization:
             mean = self._quantize_value(mean)
-            
+
         return mean, max(0, variance)  # Ensure variance is non-negative
     
     def _build_quadtree(self, x: int, y: int, size: int, depth: int = 0) -> Optional[QuadTreeNode]:
@@ -494,38 +510,6 @@ class QuadTree:
             print("    - Error in _write_with_huffman:")
             traceback.print_exc()
             raise
-            
-    def _write_to_bitstream(self, file: BinaryIO, include_huffman: bool = True) -> None:
-        """Write the quadtree to a binary bitstream.
-        
-        Args:
-            file: Binary file-like object to write to
-            include_huffman: Whether to include Huffman coding info in the header
-        """
-        writer = BitStreamWriter(file)
-        
-        # Write header
-        writer.write_uint(0x51545245)  # 'QTRE' magic number
-        writer.write_uint(self.width, 2)  # 2 bytes for width
-        writer.write_uint(self.height, 2)  # 2 bytes for height
-        
-        # Write flags (1 byte)
-        flags = 0
-        if self.use_quantization:
-            flags |= 0x01
-        if include_huffman and self.use_huffman:
-            flags |= 0x02
-        writer.write_bits(flags, 8)
-        
-        # Write quantization info (1 byte, only if used)
-        if self.use_quantization:
-            writer.write_bits(self.quantize_bits, 8)
-        
-        # Write tree structure and values
-        self._write_node_bitstream(self.root, writer)
-        
-        # Flush any remaining bits
-        writer.close()
     
     def _write_node_bitstream(self, node: 'QuadTreeNode', writer: BitStreamWriter) -> None:
         """Recursively write a node to the bitstream with enhanced data handling."""
@@ -722,121 +706,183 @@ class QuadTree:
                 if node.children[i] is not None:
                     self._write_node_bitstream(node.children[i], writer)
     
-@classmethod
-def load(cls, file_path: str) -> 'QuadTree':
-    """Load a quadtree from a file.
-    
-    Args:
-        file_path: Path to the file to load
-            
-    Returns:
-        A new QuadTree instance
-    """
-    if file_path.endswith('.json'):
-        return cls.from_json(file_path)
-    elif file_path.endswith('.huff'):
-        with open(file_path, 'rb') as f:
-            return cls._read_from_huffman(f)
-    elif file_path.endswith('.bin'):
-        with open(file_path, 'rb') as f:
-            return cls._read_from_bitstream(f)
-    else:
-        with open(file_path, 'rb') as f:
-            return pickle.load(f)
-                
-@classmethod
-def _read_from_huffman(cls, file: BinaryIO) -> 'QuadTree':
-    """Read a quadtree from a Huffman-compressed file."""
-    # Read the entire compressed data
-    compressed_data = file.read()
-    
-    # Create a temporary quadtree instance to get the Huffman coder
-    temp_quadtree = cls(np.zeros((1, 1), dtype=np.uint8))
-        
-    # Decompress the data
-    decompressed = temp_quadtree.huffman.decompress(compressed_data)
-        
-    # Read from the decompressed data
-    import io
-    return cls._read_from_bitstream(io.BytesIO(decompressed))
-
-def compress(self) -> bytes:
-    """
-    Compress the quadtree into a binary format.
-    
-    Returns:
-        bytes: Compressed binary data
+    def compress(self) -> bytes:
         """
-    print("Starting compression...")
-    if self.root is None:
-        print("  - Root is None, returning empty bytes")
-        return b''
+        Compress the quadtree into a binary format.
+        
+        Returns:
+            bytes: Compressed binary data
+        """
+        print("Starting compression...")
+        if self.root is None:
+            print("  - Root is None, returning empty bytes")
+            return b''
             
-    try:
-        # Use in-memory bytes buffer
-        import io
-        print("  - Creating in-memory buffer...")
-        with io.BytesIO() as buffer:
+        try:
+            # Use in-memory bytes buffer
+            import io
+            print("  - Creating in-memory buffer...")
+            with io.BytesIO() as buffer:
+                if self.use_huffman:
+                    print("  - Using Huffman compression...")
+                    self._write_with_huffman(buffer)
+                else:
+                    print("  - Using bitstream without Huffman...")
+                    self._write_to_bitstream(buffer, include_huffman=False)
+                compressed_data = buffer.getvalue()
+                print(f"  - Initial compressed data size: {len(compressed_data)} bytes")
+                
+            # If using Huffman, we've already written the compressed data
             if self.use_huffman:
-                print("  - Using Huffman compression...")
-                self._write_with_huffman(buffer)
-            else:
-                print("  - Using bitstream without Huffman...")
-                self._write_to_bitstream(buffer, include_huffman=False)
-            compressed_data = buffer.getvalue()
-            print(f"  - Initial compressed data size: {len(compressed_data)} bytes")
+                print(f"  - Returning Huffman compressed data: {len(compressed_data)} bytes")
+                return compressed_data
                 
-        # If using Huffman, we've already written the compressed data
-        if self.use_huffman:
-            print(f"  - Returning Huffman compressed data: {len(compressed_data)} bytes")
+            # If not using Huffman, we need to compress the bitstream
+            if self.huffman is None:
+                print("  - Initializing Huffman coder...")
+                self.huffman = HuffmanCoding()
+                
+            # Compress the raw bitstream
+            if len(compressed_data) > 0:
+                print("  - Compressing with Huffman...")
+                compressed = self.huffman.compress(np.frombuffer(compressed_data, dtype=np.uint8))
+                print(f"  - Final compressed size: {len(compressed)} bytes")
+                return compressed
+            print("  - No data to compress, returning empty bytes")
             return compressed_data
-                
-        # If not using Huffman, we need to compress the bitstream
-        if self.huffman is None:
-            print("  - Initializing Huffman coder...")
-            self.huffman = HuffmanCoding()
-                
-        # Compress the raw bitstream
-        if len(compressed_data) > 0:
-            print("  - Compressing with Huffman...")
-            compressed = self.huffman.compress(np.frombuffer(compressed_data, dtype=np.uint8))
-            print(f"  - Final compressed size: {len(compressed)} bytes")
-            return compressed
-        print("  - No data to compress, returning empty bytes")
-        return compressed_data
             
-    except Exception as e:
-        import traceback
-        print("Error during compression:")
-        traceback.print_exc()
-        raise
+        except Exception as e:
+            import traceback
+            print("Error during compression:")
+            traceback.print_exc()
+            raise
 
-def decompress(self, data: bytes) -> np.ndarray:
-    """
-    Decompress the quadtree and reconstruct the image.
-    
-    Args:
-        data: Compressed binary data
-            
-    Returns:
-        np.ndarray: Reconstructed image
-    """
-    # Create a new quadtree from the compressed data
-    import io
-    with io.BytesIO(data) as buffer:
-        # Try to determine the format
-        magic = buffer.read(4)
-        buffer.seek(0)
-            
-        if magic == b'QTHF':  # Huffman compressed
-            quadtree = self.__class__._read_from_huffman(buffer)
-        else:  # Assume raw bitstream
-            quadtree = self.__class__._read_from_bitstream(buffer)
-                
-        # Return the reconstructed image
-        return quadtree.reconstruct()
-    
-def visualize(self, show_grid: bool = True, show_mean: bool = True, 
+    @classmethod
+    def decompress(cls, compressed_data: bytes) -> np.ndarray:
+        """
+        Decompress binary data back to an image.
+
+        Args:
+            compressed_data: Compressed binary data
+
+        Returns:
+            Reconstructed image as numpy array
+        """
+        if not compressed_data:
+            raise ValueError("Empty compressed data")
+
+        # Try to detect if data is Huffman compressed by checking first few bytes
+        # If it doesn't start with our magic number, assume Huffman compressed
+        import io
+
+        # First, assume Huffman compressed data (most common case)
+        try:
+            # Create a temporary quadtree instance to get the Huffman coder
+            temp_quadtree = cls(np.zeros((1, 1), dtype=np.uint8))
+
+            # Decompress the data
+            decompressed = temp_quadtree.huffman.decompress(compressed_data)
+
+            # Read from the decompressed data
+            return cls._read_from_bitstream(io.BytesIO(decompressed)).reconstruct()
+        except Exception as e:
+            print(f"Huffman decompression failed: {e}")
+
+        # If Huffman decompression fails, try raw bitstream
+        try:
+            temp_stream = io.BytesIO(compressed_data)
+            reader = BitStreamReader(temp_stream)
+            magic = reader.read_uint(4)
+            if magic == 0x51545245:  # 'QTRE' magic number
+                # Data is raw bitstream, read it directly
+                temp_stream.seek(0)
+                quadtree = cls._read_from_bitstream(temp_stream)
+                return quadtree.reconstruct()
+        except Exception as e:
+            print(f"Raw bitstream reading failed: {e}")
+
+        # If both fail, raise an error
+        raise ValueError("Failed to decompress data: invalid format")
+
+    @staticmethod
+    def get_compression_ratio(original_size: int, compressed_size: int) -> float:
+        """
+        Tính tỷ lệ nén giống như JPEG compressor
+
+        Args:
+            original_size: Kích thước gốc (bytes)
+            compressed_size: Kích thước sau khi nén (bytes)
+
+        Returns:
+            Tỷ lệ nén (original/compressed)
+        """
+        if compressed_size == 0:
+            return float('inf')
+        return original_size / compressed_size
+
+    @staticmethod
+    def calculate_psnr(original: np.ndarray, compressed: np.ndarray) -> float:
+        """
+        Tính PSNR (Peak Signal-to-Noise Ratio) giữa ảnh gốc và ảnh đã nén
+
+        Args:
+            original: Ảnh gốc
+            compressed: Ảnh đã nén và giải nén
+
+        Returns:
+            Giá trị PSNR (dB)
+        """
+        mse = np.mean((original - compressed) ** 2)
+        if mse == 0:
+            return float('inf')
+        max_pixel = 255.0
+        return 20 * np.log10(max_pixel / np.sqrt(mse))
+
+    @staticmethod
+    def compress_to_file(image: np.ndarray, file_path: str, **quadtree_params) -> None:
+        """
+        Nén ảnh QuadTree và lưu vào file
+
+        Args:
+            image: Ảnh đầu vào
+            file_path: Đường dẫn file đích
+            **quadtree_params: Các tham số QuadTree (min_size, variance_threshold, etc.)
+        """
+        # Tạo QuadTree với tham số được cung cấp
+        quadtree = QuadTree(image, **quadtree_params)
+
+        # Nén và lưu vào file
+        compressed_data = quadtree.compress()
+
+        # Lưu file với định dạng phù hợp
+        if file_path.endswith('.qtr'):
+            # Binary format
+            with open(file_path, 'wb') as f:
+                f.write(compressed_data)
+        else:
+            # Mặc định binary format
+            with open(file_path, 'wb') as f:
+                f.write(compressed_data)
+
+    @staticmethod
+    def decompress_from_file(file_path: str) -> np.ndarray:
+        """
+        Đọc và giải nén ảnh QuadTree từ file
+
+        Args:
+            file_path: Đường dẫn file ảnh QuadTree
+
+        Returns:
+            Ảnh đã giải nén
+        """
+        # Đọc dữ liệu từ file
+        with open(file_path, 'rb') as f:
+            data = f.read()
+
+        # Giải nén sử dụng class method
+        return QuadTree.decompress(data)
+
+    def visualize(self, show_grid: bool = True, show_mean: bool = True, 
                      figsize: Tuple[int, int] = (10, 10)):
         """Visualize the quadtree decomposition.
         
@@ -861,70 +907,70 @@ def visualize(self, show_grid: bool = True, show_mean: bool = True,
         plt.tight_layout()
         plt.show()
     
-def _draw_quadtree(self, node: QuadTreeNode, image: np.ndarray, 
-                      show_grid: bool, show_mean: bool) -> None:
-    """Recursively draw quadtree on the image.
-    
-    Args:
-        node: Current node to draw
-        image: Image to draw on
-        show_grid: Whether to show grid lines
-        show_mean: Whether to show mean values
-    """
-    if node is None:
-        return
-            
-    if node.is_leaf:
-        # Draw leaf node
-        if show_grid:
-            # Draw rectangle around the node
-            color = (0, 255, 0)  # Green
-            cv2.rectangle(image, 
-                            (node.x, node.y), 
-                            (node.x + node.size - 1, node.y + node.size - 1),
-                            color, 1)
+    def _draw_quadtree(self, node: QuadTreeNode, image: np.ndarray, 
+                        show_grid: bool, show_mean: bool) -> None:
+        """Recursively draw quadtree on the image.
         
-            # Draw mean value if requested
-            if show_mean and node.size > 4:  # Only draw text if node is large enough
-                mean_str = f"{node.mean_value:.1f}"
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = min(0.5, 0.5 * node.size / 100)  # Scale font with node size
-                text_size = cv2.getTextSize(mean_str, font, font_scale, 1)[0]
-                text_x = node.x + (node.size - text_size[0]) // 2
-                text_y = node.y + (node.size + text_size[1]) // 2
+        Args:
+            node: Current node to draw
+            image: Image to draw on
+            show_grid: Whether to show grid lines
+            show_mean: Whether to show mean values
+        """
+        if node is None:
+            return
+                
+        if node.is_leaf:
+            # Draw leaf node
+            if show_grid:
+                # Draw rectangle around the node
+                color = (0, 255, 0)  # Green
+                cv2.rectangle(image, 
+                                (node.x, node.y), 
+                                (node.x + node.size - 1, node.y + node.size - 1),
+                                color, 1)
             
-                # Add semi-transparent background for better text visibility
-                overlay = image.copy()
-                cv2.rectangle(overlay, 
-                            (text_x - 2, text_y - text_size[1] - 2),
-                            (text_x + text_size[0] + 2, text_y + 2),
-                            (0, 0, 0), -1)
-                alpha = 0.6  # Transparency factor
-                cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0, image)
-                    
-                # Draw text
-                cv2.putText(image, mean_str, (text_x, text_y),
-                            font, font_scale, (0, 255, 0), 1, cv2.LINE_AA)
-    else:
-        # Draw internal node (recursively process children)
-        for child in node.children:
-            if child is not None:
-                self._draw_quadtree(child, image, show_grid, show_mean)
-            
-        # Draw split lines for internal nodes
-        if show_grid and node.size > 1:
-            half = node.size // 2
-            color = (255, 0, 0)  # Red
-            # Vertical line
-            cv2.line(image, 
-                        (node.x + half, node.y),
-                        (node.x + half, node.y + node.size - 1),
-                        color, 1)
-            # Horizontal line
-            cv2.line(image,
-                        (node.x, node.y + half),
-                        (node.x + node.size - 1, node.y + half),
-                        color, 1)
+                # Draw mean value if requested
+                if show_mean and node.size > 4:  # Only draw text if node is large enough
+                    mean_str = f"{node.mean_value:.1f}"
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = min(0.5, 0.5 * node.size / 100)  # Scale font with node size
+                    text_size = cv2.getTextSize(mean_str, font, font_scale, 1)[0]
+                    text_x = node.x + (node.size - text_size[0]) // 2
+                    text_y = node.y + (node.size + text_size[1]) // 2
+                
+                    # Add semi-transparent background for better text visibility
+                    overlay = image.copy()
+                    cv2.rectangle(overlay, 
+                                (text_x - 2, text_y - text_size[1] - 2),
+                                (text_x + text_size[0] + 2, text_y + 2),
+                                (0, 0, 0), -1)
+                    alpha = 0.6  # Transparency factor
+                    cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0, image)
+                        
+                    # Draw text
+                    cv2.putText(image, mean_str, (text_x, text_y),
+                                font, font_scale, (0, 255, 0), 1, cv2.LINE_AA)
+        else:
+            # Draw internal node (recursively process children)
+            for child in node.children:
+                if child is not None:
+                    self._draw_quadtree(child, image, show_grid, show_mean)
+                
+            # Draw split lines for internal nodes
+            if show_grid and node.size > 1:
+                half = node.size // 2
+                color = (255, 0, 0)  # Red
+                # Vertical line
+                cv2.line(image, 
+                            (node.x + half, node.y),
+                            (node.x + half, node.y + node.size - 1),
+                            color, 1)
+                # Horizontal line
+                cv2.line(image,
+                            (node.x, node.y + half),
+                            (node.x + node.size - 1, node.y + half),
+                            color, 1)
 
 
 def compress_image(image: np.ndarray, 
